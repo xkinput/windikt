@@ -1,0 +1,155 @@
+﻿//keytao 访问KeyTao服务器
+import inet.http;
+import JSON;
+import config;
+import string;
+import string.builder;
+import table;
+import time;
+if (_STUDIO_INVOKED) {
+	import console;
+	console.open();
+}
+
+namespace keytao;
+
+setProxy = function(){ 
+	var protocolHeader, userAndPwd, hostAndPort = ..string.match(..config.proxy:"", "^(<https?>|<socks5?>\://)(<[^\@^\:]+\:[^\@^\:]+\@>?)(<[^\:]+?><\:\d+>?)$");
+	if (!protocolHeader) {
+		..inet.setProxy(false);
+		return false; 
+	} else{
+		..inet.setProxy( ..string.concat(protocolHeader, hostAndPort) );
+	}
+	var user, pwd = ..string.match(userAndPwd, "^(.+?)\:(.+?)\@$");
+	if (user and ..string.len(user)>0) ..inet.setProxyAuth(user, pwd);
+	return true; 
+}
+
+getJson = function(url, api, logger){
+	setProxy();
+	var http = ..inet.http();
+	var json, errMsg, errCode = http.get(..inet.url.joinpath(url,api));
+	if (errMsg) {
+		if (..config.isDebug) logger.appendText("⚠️ 访问 API 失败。可能是网络问题，或者 API 已改变。附加错误信息：", errMsg, '\r\n');
+		http.close();
+		return null; 
+	}
+	http.close();
+	return json; 
+}
+
+getLargeJson = function(url, api, header, totalSize, logger){
+	setProxy();
+	var http = ..inet.http();
+	logger.appendText("已下载：");
+	var buffer = ..string.builder(); // 高频拼接大量文本，性能比普通 string 强
+	var tick = ..time.tick();
+	http.onReceive = function(str, size, contentLength){ // str 为本次接收的数据块，size 为本次接收的数据块大小，contentLength 为目标文件总大小（需要服务器提供 Content-Length，这里并没有，得靠前面估算）
+    	buffer.append(str);
+    	if ( ..time.tick()-tick < 500 ) return ; // 设置更新文本框的时间间隔，避免闪烁
+    	logger.selectLine(-1, ..string.format("已下载 %d 字节，约 %4.2f %%", buffer.size(), buffer.size()*100/totalSize) );
+    	tick = ..time.tick();
+	}
+	var ok,errMsg = http.get(..inet.url.joinpath(url,api), header); // 如果使用了 onReceive，则 http.get 的第一个返回值是 true 或者 null。http.get 是同步阻塞函数，会等待下载完毕。
+	http.close();
+	if (errMsg) {
+		if (..config.isDebug) logger.appendText("⚠️ 访问 API 失败。可能是网络问题，或者 API 已改变。附加错误信息：", errMsg, '\r\n');
+		return null; 
+	}
+	var json = tostring(buffer);
+	logger.selectLine(-1, ..string.format('下载完成，共 %d 字节。\r\n', #json) );
+	var jsonPath = ..io.tmpname("windikt");
+	if (..string.save(jsonPath, json)) {
+		return jsonPath; 
+	} else{
+		if (..config.isDebug) logger.print("⚠️ 保存数据失败。可能是硬盘空间不足，或者软件没有系统临时文件夹访问权限。");
+		return null; 
+	}
+}
+
+/* 成功返回 id,date（date可能为null），失败返回 null */
+getLatestTaskInfo = function(logger) {
+	setProxy();
+	var url = ..config.keytaoUrl;
+	var api = "/api/admin/sync-to-github/tasks?page=1&pageSize=10";
+	var json = getJson(url, api, logger);
+	//var json = ..string.load("%Desktop%\LatestTaskInfo.json");
+	//..string.save("%Desktop%\LatestTaskInfo.json", json);
+	if (!json) return null;
+	/** json 形如 {
+    	"id": "b90a3a2e-9d72-4fe6-89ae-8d5581373d24",
+    	"completedAt": "2026-04-09T14:31:53.550Z",
+    	"status": "Completed",
+		...
+	}
+	**/
+	var tb = ..JSON.tryParse(json);
+	if (!tb) {
+		if (..config.isDebug) logger.print("⚠️ 解析数据失败。可能是服务器的响应结构发生变化。");
+		return null;
+	}
+	var latestTask = (function(){
+		for(i=1;10;1){
+			var path = ..string.concat("tasks[", i, "].id");
+			var id, task = ..table.get(path, tb);
+			if (id and task.status=="Completed") return task;
+		}
+	})();
+	if (!latestTask) {
+		if (..config.isDebug) logger.print("⚠️ 验证数据失败。可能是服务器的响应结构发生变化，或者服务器产生了过多的失败任务。");
+		return null;
+	} else {
+		return latestTask.id, latestTask.completedAt:null;
+	}
+}
+
+/* 返回 countAll（可能为null）, countOf={Supplement=254;CSS=630;CSSSingle=608;Symbol=50;Link=17;Single=17722;Phrase=121545;English=131}（可能为{}） */
+getLatestDictInfo = function(logger){
+	setProxy();
+	var url = ..config.keytaoUrl;
+	var api = "/api/phrases";
+	var json = getJson(url, api, logger);
+	//var json = ..string.load("%Desktop%\LatestTaskDict.json");
+	//..string.save("%Desktop%\LatestTaskDict.json", json);
+	/** json 形如 {
+		phrasesByType={Supplement=254;CSS=630;CSSSingle=608;Symbol=50;Link=17;Single=17722;Phrase=121545;English=131}; 
+		total=140957 
+	}
+	**/
+	if (!json) {
+		return null, {};
+	}
+	var tb = ..JSON.tryParse(json);
+	var countAll = ..table.get("total", tb);
+	var countOf = ..table.get("phrasesByType", tb);
+	if (!countAll or type(countOf)!=="table") {
+		if (..config.isDebug) logger.print("⚠️ 验证数据结构失败。可能是服务器响应结构发生变化。");
+	}
+	return countAll, countOf:{}; 
+}
+
+/** 成功返回 jsonPath（因数据太大，直接返回（不管是通过 thread.set，thread.var 还是 thread.table 传递）可能会导致主线程获得 null），对应的 json 形如
+	{  phrases: [
+		{	"word": "；",
+            "code": ";",
+            "type": "Symbol",
+            "weight": 10
+        },
+        { ... },
+        ...
+      ],
+      total: 140957
+    }
+	失败返回 null, errMsg
+**/
+getLastestTaskData = function(totalSize=12686130, logger){
+	setProxy();
+	var url = ..config.keytaoUrl;
+	var apiKey = ..config.keytaoApiKey;
+	var api = "/api/v1/phrases/all";
+	var header = "X-API-Key: "++apiKey;
+	var jsonPath = getLargeJson(url, api, header, totalSize, logger);
+	//var jsonPath = "%Desktop%\LastestTaskData.json";
+	return jsonPath; 
+}

@@ -1,0 +1,25 @@
+import win.ui;
+/*DSG{{*/
+var winform = win.form(text="关于";right=423;bottom=271;border="thin";max=false;min=false)
+winform.add(
+edit={cls="edit";text="Edit";left=8;top=8;right=416;bottom=264;edge=1;multiline=1;readonly=1;z=1}
+)
+/*}}*/
+
+winform.edit.text = /**
+windikt（问道）v0.0.2 beta
+
+⚫ 声明
+⚪ 本程序源代码开放于 https://github.com/xkinput/windikt
+⚪ 本程序功能可用性高度依赖 KeyTao API
+⚪ 因使用本程序导致的任何损失，由使用者自行承担
+
+⚫ 发行渠道
+⚪ 方式一（Github Releases）：https://github.com/xkinput/windikt/releases
+⚪ 方式二（永硕e盘）：https://xxxk.ysepan.com
+⚪ 方式三（键道QQ群）：865189947
+**/
+
+winform.show();
+win.loopMessage();
+return winform;

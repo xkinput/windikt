@@ -1,0 +1,190 @@
+import win.ui;
+/*DSG{{*/
+mainForm = win.form(text="问道（windikt）- 小小星空的键道码表更新程序";right=535;bottom=399)
+mainForm.add(
+btnAbout={cls="button";text='\uD83D\uDCAC 关于';left=272;top=16;right=392;bottom=48;dl=0.51;dr=0.27;dt=1;font=LOGFONT(h=-14);z=5};
+btnConfig={cls="button";text='\u2699\uFE0F 设置';left=144;top=16;right=264;bottom=48;dl=0.27;dr=0.51;dt=1;font=LOGFONT(h=-14);z=4};
+btnFetchUpdate={cls="button";text='\u2601\uFE0F 更新';left=16;top=16;right=136;bottom=48;dl=1;dr=0.75;dt=1;font=LOGFONT(h=-14);z=3};
+btnQuit={cls="button";text='\u274C 退出';left=400;top=16;right=520;bottom=48;dl=0.75;dr=1;dt=1;font=LOGFONT(h=-14);z=6};
+edit={cls="edit";left=16;top=88;right=520;bottom=384;db=1;dl=1;dr=1;dt=1;edge=1;hscroll=1;multiline=1;readonly=1;vscroll=1;z=2};
+groupbox={cls="groupbox";text="运行记录";left=8;top=64;right=528;bottom=392;db=1;dl=1;dr=1;dt=1;edge=1;z=1}
+)
+/*}}*/
+
+import config; // config = config.load();
+import win.ui.minmax;
+if (_STUDIO_INVOKED) import console;
+
+mainForm.btnFetchUpdate.oncommand = function(id,event){
+	mainForm.btnFetchUpdate.disabledText = {"✶","✸","✹","✺","✹","✷"; text="执行中"};
+	mainForm.btnConfig.disabled = true;
+	
+	var trdMain = function(logger){
+		import config;
+		import keytao;
+		import dict;
+		import io;
+		import table;
+		import thread.works;
+		if (_STUDIO_INVOKED) {
+			import console;
+			console.open();
+		};
+		
+		var tmpPaths = [];
+		
+		logger.text = "";
+		
+		logger.print("⚪ 收集本地码表信息……");
+		
+		var xkjd6Dir = dict.getXkjd6Dir(logger);
+		if (!xkjd6Dir) {
+			logger.print("❌ 找不到本地码表目录！请检查设置里的「用户资料目录」是否正确。");
+			return tmpPaths, null, null;
+		}
+	
+		var argHeader = dict.getXkjd6ArgHeader(xkjd6Dir, logger);
+		if (!argHeader) {
+			logger.print("❌ 读取 xkjd6_arg.txt 头部信息失败！");
+			return tmpPaths, null, null;
+		}
+	
+		var localId,localDate = config.lastKeytaoTaskId, config.lastKeytaoTaskDate; // 均可能为 null
+		logger.printf("上次更新时服务器的任务：%s...，日期：%s", (localId ? string.left(localId,6) : "未知"), (localDate:"未知"));
+	
+		logger.print("⚪ 查询服务器最新任务信息……");
+		var serverId,serverDate = keytao.getLatestTaskInfo(logger); // 均可能为 null
+		logger.printf("服务器最新任务：%s...，日期：%s", (serverId ? string.left(serverId,6) : "未知"), (serverDate:"未知"));
+		if (serverId and serverId==localId) {
+			logger.print("本地码表已是最新。");
+			return tmpPaths, serverId, serverDate;
+		}
+	
+		logger.print("⚪ 查询服务器词库信息……");
+		var countAll,countOf = keytao.getLatestDictInfo(logger); // countAll 可能为 null，countOf 可能为 {}
+		if (!countAll) {
+			logger.print("❌ 查询词库信息失败！");
+			return tmpPaths, null, null;
+		}
+	
+		logger.printf("⚪ 下载词库，预估数据量：%d 字节", countAll*90);
+		var jsonPath = keytao.getLastestTaskData(countAll*90, logger); // 可能为 null
+		if (!io.exist(jsonPath)) {
+			logger.print("❌ 下载词库失败！");
+			return tmpPaths, null, null; 
+		}
+		table.push(tmpPaths, jsonPath);
+	
+		logger.print("⚪ 验证词库……");
+		var ok = dict.verify(jsonPath, countAll, logger); // 返回 true 或 null
+		if (!ok) {
+			logger.print("❌ 词库校验失败！");
+			return tmpPaths, null, null; 
+		}
+	
+		logger.print("⚪ 分类词库……");
+		var jsonPaths = dict.classify(jsonPath, countOf, logger); // 形如 {Supplement=null;CSS="C:\xxx.txt";Single="C:\xxx.txt";Phrase="C:\xxx.txt"} 或 null 
+		if (!jsonPaths or !jsonPaths.Supplement or !jsonPaths.CSS or !jsonPaths.Single or !jsonPaths.Phrase) {
+			logger.print("❌ 词库分类失败！");
+			return tmpPaths, null, null;
+		}
+		for(k,jsonPath in jsonPaths){
+			table.push(tmpPaths, jsonPath);
+		}
+	
+		logger.print("⚪ 排序词库……");
+		var works = thread.works(2, function(jsonPath){
+			import dict;
+			return dict.order(jsonPath);
+		});
+		for(dictType,path in jsonPaths){
+			works.push(path);
+		}
+		var successCount = 0;
+		works.waitClose(function(jsonPath){
+			if (jsonPath) successCount++;
+		}, 60000);
+		if (successCount < 4) {
+			logger.print("❌ 词库排序失败！");
+			return tmpPaths, null, null;
+		} 
+
+		logger.print("⚪ 转换词库格式……");
+		var works = thread.works(2, function(args){
+			import dict;
+			return dict.rimeToYong(args.path, args.logger);
+		});
+		for(dictType,path in jsonPaths){
+			works.push({path=path; logger=logger});
+		}
+		var successCount = 0;
+		works.waitClose(function(jsonPath){
+			if (jsonPath) successCount++;
+		}, 60000);
+		if (successCount < 4) {
+			logger.print("❌ 词库转换失败！");
+			return tmpPaths, null, null;
+		}
+	
+		logger.print("⚪ 生成小小星空码表……");
+		var dictPaths = dict.generateXkjd6Dict(jsonPaths, argHeader, logger);
+		if (!dictPaths) {
+			logger.print("❌ 生成码表失败！");
+			return tmpPaths, null, null;
+		}
+		for(k,dictPath in dictPaths){
+			table.push(tmpPaths, dictPath);
+		}
+	
+		logger.print("⚪ 替换旧码表……");
+		var ok = dict.replaceXkjd6Dict(dictPaths, xkjd6Dir, logger);
+		if (!ok) {
+			logger.print("❌ 替换码表失败！");
+			return tmpPaths, null, null;
+		}
+	
+		return tmpPaths, serverId,serverDate; 
+	}
+
+	var tmpPaths,serverId,serverDate = thread.invokeAndWait(trdMain, mainForm.edit);
+	
+	if (tmpPaths) {
+		mainForm.edit.printf("⚪ 清理 %s 个临时文件……", #tmpPaths);
+		for(i=1;#tmpPaths;1){
+			io.remove(tmpPaths[i]);
+		}
+	}
+	
+	if (serverId) {
+		config.lastKeytaoTaskId = serverId;
+		config.lastKeytaoTaskDate = serverDate;
+		config.save();
+		mainForm.edit.print("✅ 成功更新！");
+	} else {
+		mainForm.edit.print("❌ 更新失败！");
+	};
+
+	mainForm.btnConfig.disabled = false;
+	mainForm.btnFetchUpdate.disabledText = null;
+}
+
+mainForm.btnConfig.oncommand = function(id,event){
+	mainForm.loadForm("/dlg/config.aardio").doModal(mainForm);
+}
+
+mainForm.btnAbout.oncommand = function(id,event){
+	mainForm.loadForm("/dlg/about.aardio").doModal(mainForm);
+}
+
+mainForm.btnQuit.oncommand = function(id,event){
+	mainForm.close();
+}
+
+
+win.ui.minmax(mainForm, mainForm.width, mainForm.height);
+mainForm.show();
+
+var localId,localDate = config.lastKeytaoTaskId, config.lastKeytaoTaskDate; // 均可能为 null
+mainForm.edit.printf("上次更新时服务器的任务：%s...，日期：%s", (localId ? string.left(localId,6) : "未知"), (localDate:"未知"));
+
+return win.loopMessage();

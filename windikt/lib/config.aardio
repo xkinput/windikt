@@ -1,0 +1,34 @@
+//config 配置文件
+
+/* 创建配置文件（/config.table），可能含以下项目：
+
+xxxkUserDataDir		小小星空用户资料目录。默认为 ..
+keytaoApiKey		用户的 KeyTao API Key。默认为 kt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+useProxy			代理开关。true 为开，null 或 false 为关
+proxy				代理服务器地址。默认为 null。
+isDebug				调试模式（详细的运行记录）开关。默认为 true。
+lastKeytaoTaskId	上次成功更新键道6码表时，对应的KeyTao服务器任务id。null 表示上次未成功更新
+lastKeytaoTaskDate	上次成功更新键道6码表时，对应的KeyTao服务器任务完成时间。null表示未知
+keytaoUrl			KeyTao服务器地址。默认为 https://keytao.rea.ink
+
+参见 doc://library-guide/std/fsys/config.html
+*/
+
+import fsys.table;
+config = fsys.table( io.appData("/windikt/config.table") ); // 创建 %LocalAppData%/windikt/config.table 文件
+if (!config.xxxkUserDataDir) config.xxxkUserDataDir="..";
+if (!config.keytaoApiKey) config.keytaoApiKey="kt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+if (config.isDebug==null) config.isDebug=true;
+if (!config.keytaoUrl) config.keytaoUrl="https://keytao.rea.ink";
+
+/** 不需要序列化的配置名字前请添加下划线
+namespace config {
+	__appName = "windikt";
+}**/
+
+/**intellisense(config)
+__appName = 应用程序名
+__website = 官方网站
+saveAll() = 保存当前对象（fsys.config ）管理的所有文件同步表（fsys.table 对象）到文件。\n如果 fsys.table 对象调用 enableAutoSave(false) 禁用了自动保存，则 saveAll 调用对其无效。\n禁用自动保存的 fsys.table 对象必须显式调用其 save 方法保存表数据到文件。
+? = 如果指定不以下划线开始的成员名称（只读不可写入），\n则返回当前配置目录下同名的文件同步表（fsys.table 对象）。\n这是一个可自动序列化到同名配置文件的表对象。\n仅序列化以字符串、数值为键的元素，\n仅序列化值为字符串、数值、buffer 以及定义了 _serialize 元方法的成员。\n循环引用的值转换为 null，序列化时忽略成员函数\n如果指定的成员名以下划线开始，则正常读写对应的属性值而非打开文件同步表。\n注意下划线开始的属于只读常量，设为非 null 值以后不可再修改。\n!fsys_table.
+end intellisense**/
