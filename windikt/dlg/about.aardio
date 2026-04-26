@@ -1,0 +1,29 @@
+import win.ui;
+/*DSG{{*/
+var winform = win.form(text="关于";right=423;bottom=271;border="thin";max=false;min=false)
+winform.add(
+edit={cls="edit";text="Edit";left=8;top=8;right=416;bottom=264;edge=1;multiline=1;readonly=1;z=1}
+)
+/*}}*/
+
+winform.edit.text = /**
+问道（windikt）- 小小星空的键道码表更新程序
+
+⚫ 声明
+⚪ 本程序源代码开放于 https://github.com/xkinput/windikt
+⚪ 本程序功能可用性高度依赖 KeyTao API
+⚪ 因使用本程序导致的任何损失，由使用者自行承担
+
+⚫ 更新记录
+⚪ v0.0.2 beta (260423):更新来源从 Github 改成 KeyTao 服务器
+⚪ v0.0.1 alpha (260305):初版
+
+⚫ 发行渠道
+⚪ 方式一（Github Releases）：https://github.com/xkinput/windikt/releases
+⚪ 方式二（永硕e盘）：https://xxxk.ysepan.com
+⚪ 方式三（键道QQ群）：865189947
+**/
+
+winform.show();
+win.loopMessage();
+return winform;

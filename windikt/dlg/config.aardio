@@ -1,0 +1,175 @@
+import win.ui;
+/*DSG{{*/
+var winform = win.form(text="问道（windikt）- 设置";right=671;bottom=351;border="dialog frame";max=false;min=false)
+winform.add(
+btnGetKeytaoApiKey={cls="button";text='\u23EC 获取';left=568;top=80;right=656;bottom=112;color=0xD77800;font=LOGFONT(h=-14);z=7};
+btnInstallXxxk={cls="button";text='\u23EC 安装';left=568;top=32;right=656;bottom=64;color=0xD77800;font=LOGFONT(h=-14);z=14};
+btnOK={cls="button";text='\u2714\uFE0F 确定';left=480;top=312;right=568;bottom=344;font=LOGFONT(h=-14);z=5};
+btnPickXxxkUserDataDir={cls="button";text='\uD83D\uDCC2 浏览';left=376;top=32;right=464;bottom=64;font=LOGFONT(h=-14);z=12};
+btnSave={cls="button";text='\uD83D\uDCBE 保存';left=384;top=312;right=472;bottom=344;disabled=1;font=LOGFONT(h=-14);z=8};
+btnScanXxxkUserDataDir={cls="button";text='\uD83D\uDD0D 检测';left=472;top=32;right=560;bottom=64;font=LOGFONT(h=-14);z=13};
+button={cls="button";text='\u274C 取消';left=576;top=312;right=664;bottom=344;font=LOGFONT(h=-14);z=9};
+cboUrls={cls="combobox";left=168;top=216;right=656;bottom=240;edge=1;font=LOGFONT(h=-14);items={"https://keytao.rea.ink","https://keytao.input.press","https://keytao.vercel.app"};mode="dropdownlist";z=18};
+chkDebug={cls="checkbox";text="调试模式（在运行记录框里输出更详细的信息）";left=24;top=264;right=392;bottom=280;z=15};
+chkProxy={cls="checkbox";text="访问 http(s) 时使用代理：";left=24;top=176;right=192;bottom=192;z=16};
+editKeytaoApiKey={cls="edit";left=128;top=80;right=560;bottom=112;edge=1;multiline=1;z=4};
+editProxy={cls="edit";left=200;top=168;right=656;bottom=200;edge=1;multiline=1;z=6};
+editXxxkUserDataDir={cls="edit";left=144;top=32;right=368;bottom=64;edge=1;z=11};
+groupbox={cls="groupbox";text="基本设置";left=8;top=8;right=664;bottom=128;edge=1;z=2};
+groupbox2={cls="groupbox";text="高级设置";left=8;top=144;right=664;bottom=296;edge=1;z=1};
+static={cls="static";text="KeyTao API Key：";left=24;top=88;right=120;bottom=112;transparent=1;z=3};
+static2={cls="static";text="KeyTao 服务器网址：";left=24;top=224;right=152;bottom=248;transparent=1;z=17};
+static3={cls="static";text="xxxk 用户资料目录：";left=24;top=40;right=144;bottom=64;transparent=1;z=10}
+)
+/*}}*/
+
+import config; //config = config.load();
+import fsys.dlg.dir;
+import process.git;
+
+/* 被父窗口打开时触发 */
+winform.onInitDialog = function(hwnd,message,wParam,lParam){
+	winform.center();
+	winform.editXxxkUserDataDir.text = config.xxxkUserDataDir;
+	winform.editKeytaoApiKey.text = config.keytaoApiKey;
+	winform.chkProxy.checked = config.useProxy;
+	winform.editProxy.disabled = !winform.chkProxy.checked;
+	winform.editProxy.text = config.proxy : "";
+	winform.cboUrls.selText = config.keytaoUrl;
+	winform.chkDebug.checked = config.isDebug;
+	
+	winform.btnSave.disabled = true; // 修改文本框的代码会触发文本框的 onChange，导致 btnSave 可用，这里恢复成禁用
+}
+
+/* 各种控件的提示 */
+import win.ui.tooltip;
+winform.tooltipCtrl = win.ui.tooltip(winform);
+winform.tooltipCtrl.addTool(winform.editXxxkUserDataDir, '如果小小星空安装在 %ProgramFiles% 或 %ProgramFiles(x86)% 里，\r\n那么码表目录通常在 %AppData%/yong/mb。\r\n否则，在小小星空程序目录下的 .yong/mb。');
+winform.tooltipCtrl.addTool(winform.editKeytaoApiKey, '要从 KeyTao 服务器拉取最新码表，你需要先免费注册一个账号并生成开发者 API Key。');
+winform.tooltipCtrl.addTool(winform.editProxy, '支持 http 或 socks 协议。\n示例1：http://127.0.0.1:1080\n示例2：socks5://user:pwd@127.0.0.1:1080\n注意：用户名或密码中若有特殊符号，需 url encode 转义。');
+
+/* 浏览小小星空用户资料目录 */
+winform.btnPickXxxkUserDataDir.oncommand = function(id,event){
+	var dir = fsys.dlg.dir();
+	if (dir) winform.editXxxkUserDataDir.text = dir;
+}
+
+/* 自动检测小小星空用户资料目录 */
+winform.btnScanXxxkUserDataDir.oncommand = function(id,event){
+	winform.btnScanXxxkUserDataDir.disabledText = ["✶","✸","✹","✺","✹","✷"];
+	
+	import sys.reg; // 用于读取注册表
+	import fsys.environment; // 用于获取环境变量值
+	import sys.info; // 用于判断系统位数
+	import fsys.path; // 用于判断是否为子目录
+	
+	/* %ProgramFiles(x86)% 只在 64 位系统有效，为 Program Files (x86)；
+	   %ProgramW6432% 只在 64 位系统有效，为 Program Files；
+	   %ProgramFiles% 在 64 位系统是 Program Files (x86)，在 32 位系统是 Program Files。*/
+	var pfEnvs = {"%ProgramFiles(x86)%", "%ProgramW6432%", "%ProgramFiles%"};
+	var pfDirs = table.map(pfEnvs, function(env){
+		var pfDir = fsys.environment.expand(env);
+		return (pfDir!==env ? pfDir : null); 
+	});
+	
+	// 寻找小小星空程序目录
+	var instDir = (function(){
+		// 在注册表里查找小小星空程序目录（aardio 是 32 位程序，SOFTWARE\Microsoft 会被自动重定向到 SOFTWARE\Wow6432Node\Microsoft）
+		var result = sys.reg.getValue("InstallLocation", "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\xxxk", 0x80000002/*_HKEY_LOCAL_MACHINE*/);
+		if (result) return result;
+		// 如果注册表找不到，尝试通过 Program Files 目录查找
+		for(k,pfDir in pfDirs){
+			var instDir = io.joinpath(pfDir, "xxxk");
+			if (io.exist(instDir)) return instDir;
+		}
+	})();
+	
+	// 寻找用户资料目录
+	var dictDir = (function(instDir){
+		if (!instDir) return;
+		for(k,pfDir in pfDirs){
+			if (fsys.path.ischild(pfDir, instDir)) {
+				return fsys.environment.expand("%AppData%\yong");
+			} else{
+				return io.joinpath(instDir, ".yong"); 
+			}
+		}
+	})(instDir);
+	
+	if (dictDir) {
+		winform.btnScanXxxkUserDataDir.disabledText = {"✶","✸","✹","✺","✹","✷"; text="找到了"};
+		winform.editXxxkUserDataDir.text = dictDir;
+	} else {
+		winform.btnScanXxxkUserDataDir.disabledText = {"✶","✸","✹","✺","✹","✷"; text="没找到"};
+		winform.editXxxkUserDataDir.text = "..";
+	}
+	
+	winform.setTimeout( function(edit){edit.disabledText=null}, 1000, winform.btnScanXxxkUserDataDir);
+}
+
+/* 安装小小星空 */
+winform.btnInstallXxxk.oncommand = function(id,event){
+	process.openUrl("https://xxxk.input.press");
+}
+
+/* 获取 KeyTao API Key */
+winform.btnGetKeytaoApiKey.oncommand = function(id,event){
+	process.openUrl(winform.cboUrls.selText ++ "/developer");
+}
+
+/* 与保存动作相关的控件逻辑 */
+winform.editXxxkUserDataDir.onChange = function(){ // 代码修改 edit 文本也会触发
+	winform.btnSave.disabled=false;
+}
+winform.editKeytaoApiKey.onChange = function(){ // 代码修改 edit 文本也会触发
+	winform.btnSave.disabled=false;
+}
+winform.editProxy.onChange = function(){ // 代码修改 edit 文本也会触发
+	winform.btnSave.disabled=false;
+}
+winform.cboUrls.onSelChange = function(){
+	winform.btnSave.disabled=false;
+}
+winform.chkProxy.oncommand = function(id,event){
+	winform.btnSave.disabled=false;
+	winform.editProxy.disabled = !winform.chkProxy.checked;
+}
+winform.chkDebug.oncommand = function(id,event){
+	winform.btnSave.disabled=false;
+}
+winform.btnSave.oncommand = function(id,event){
+	if (!io.fullpath(winform.editXxxkUserDataDir.text)) {
+		winform.editXxxkUserDataDir.showErrorTip("保存失败", "无效的目录路径！");
+		return ; 
+	}
+
+	if (winform.chkProxy.checked and 
+		!string.match(winform.editProxy.text, "^<http?>|<socks[45]?>\://<[^\@^\:]+\:[^\@^\:]+\@>?<[^\:]+?><\:\d+>?$")
+	) {
+		/* 模式匹配说明：① <https?>|<socks5?>\:// 匹配协议头；② <[^\@^\:]+\:[^\@^\:]+\@>? 匹配用户名和密码；③ <[^\:]+?> 匹配主机地址；④ <\:\d+>? 匹配主机端口号*/
+		winform.editProxy.showErrorTip("保存失败", "无效的代理服务器格式！");
+		return ; 
+	}
+
+	config.xxxkUserDataDir = string.len(winform.editXxxkUserDataDir.text)>0 ? winform.editXxxkUserDataDir.text : "..";
+	config.keytaoApiKey = string.len(winform.editKeytaoApiKey.text)>0 ? winform.editKeytaoApiKey.text : "kt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+	config.useProxy =  winform.chkProxy.checked;
+	config.proxy = string.len(winform.editProxy.text)>0 ? winform.editProxy.text : null;
+	config.keytaoUrl = winform.cboUrls.selText;
+	config.isDebug = winform.chkDebug.checked;
+	config.save();
+	winform.btnSave.disabled=true;
+	return true; 
+}
+winform.btnOK.oncommand = function(id,event){
+	if (winform.btnSave.disabled or winform.btnSave.oncommand()) winform.close();
+}
+
+/* 关闭模态窗口 */
+winform.button.oncommand = function(id,event){
+	winform.endModal();
+}
+
+winform.show();
+win.loopMessage();
+return winform;

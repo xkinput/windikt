@@ -1,0 +1,206 @@
+﻿//dict 词库转换
+
+import string;
+import JSON;
+import table;
+import config;
+import io;
+import fsys;
+if (_STUDIO_INVOKED) {
+	import console;
+	console.open();
+}
+namespace dict;
+
+/* 成功返回 path，失败返回 null */
+tableToFile = function(tb, path){
+	var path = path : ..io.tmpname("windikt");
+	if (..string.save(path, ..JSON.stringify(tb,true))) {
+		return path; 
+	} else{
+		if (..config.isDebug) logger.print("⚠️ 保存数据失败。可能是硬盘空间不足，或者软件没有系统临时文件夹访问权限。");
+		return null; 
+	}
+}
+
+/* 成功返回 true，失败返回 null */
+verify = function(jsonPath, countAll, logger){
+	var tb = ..JSON.tryParse(..string.load(jsonPath));
+	if (!tb or !..table.get("phrases[].word",tb) or !..table.get("phrases[].code",tb) or !..table.get("phrases[].type",tb)) {
+		logger.print("⚠️ 词库格式校验失败！");
+		return null; 
+	}
+	if (#tb.phrases !== countAll) {
+		logger.print("⚠️ 词库数量校验失败！");
+		return null; 
+	}
+	return true;
+}
+
+/* 返回形如 {Supplement=null;CSS="C:\xxx.txt";Single="C:\xxx.txt";Phrase="C:\xxx.txt"} 或 null */
+classify = function(jsonPath, countOf, logger){
+	var tb = ..JSON.tryParse(..string.load(jsonPath));
+	var recordsOf = {Supplement={};CSS={};Single={};Phrase={}};
+	for(i=1;#tb.phrases;1){
+		var record = tb.phrases[i];
+		if (recordsOf[record.type]) {
+			if (!record.word or !record.code) {
+				logger.printf("⚠️ 词库（%s）存在错误格式的词条！", record.type);
+				return null;
+			}
+			..table.push(recordsOf[record.type], {word=record.word; code=record.code; weight=record.weight});
+		}
+	}
+	for(dictType,records in recordsOf){
+		if (countOf[dictType] and countOf[dictType] !== #records) {
+			logger.printf("⚠️ 词库（%s）数量校验失败！%d ≠ %d", dictType, countOf[dictType], #records);
+			return null;
+		}
+		recordsOf[dictType] = tableToFile(records);
+	}
+	return recordsOf;
+}
+
+/* 成功返回 jsonPath，失败返回 null */
+order = function(jsonPath){
+	var tb = ..JSON.tryParse(..string.load(jsonPath)); // tb 形如 { {word="词1"; code="ck"; weight=10};  {word="词2"; code="co"; weight=10} }
+	..table.sort(tb, function(next){
+		if (owner.code<next.code) return true;
+		if (owner.code==next.code and owner.weight<next.weight) return true;  
+	});
+	return tableToFile(tb, jsonPath);
+}
+
+/* 成功返回 jsonPath，失败返回 null */
+rimeToYong = function(jsonPath, logger){
+	var tb = ..JSON.tryParse(..string.load(jsonPath)); // tb 形如 { {word="词1"; code="ck"; weight=10};  {word="词2"; code="co"; weight=10} }
+	var file = ..io.file(jsonPath, "w+"); // 文本模式（t或者省略）下，读入一行时会移除回车符 \r，即每行统一由 \n 结尾；写入一行时会自动补回车符，即 \n 变成 \r\n
+	if (!file) {
+		if (..config.isDebug) logger.print("⚠️ 保存数据失败。临时文件可能正被占用。");
+		return null; 
+	}
+	for(i=1;#tb;1){
+		var ok,errMsg,errCode = file.write(tb[i].code, " ", tb[i].word, '\n');
+		if (!ok) {
+			if (..config.isDebug) logger.printf("⚠️ 保存数据失败。附加错误信息：%s", errMsg);
+			file.close();
+			return null; 
+		}
+	}
+	file.close();
+	return jsonPath; 
+}
+
+/* 成功返回 dictPaths, 失败返回 null */
+generateXkjd6Dict = function(jsonPaths, argHeader, logger){
+	var dictPaths = {["xkjd6_arg.txt"]=..io.tmpname("windikt"), ["xkjd6_dict_ci.txt"]=..io.tmpname("windikt"), ["xkjd6_dict_jm.txt"]=..io.tmpname("windikt")};
+	
+	var ok,errMsg = ..string.save(dictPaths["xkjd6_arg.txt"], ..string.fromto(argHeader++..string.load(jsonPaths.Single), , 54936));
+	if (!ok) {
+		if (..config.isDebug) logger.printf("⚠️ 生成 xkjd6_arg.txt 失败。附加错误信息：%s", errMsg);
+		return null;
+	}
+	
+	var ok,errMsg = ..string.save(dictPaths["xkjd6_dict_ci.txt"], ..string.fromto(..string.load(jsonPaths.Phrase), , 54936));
+	if (!ok) {
+		if (..config.isDebug) logger.printf("⚠️ 生成 xkjd6_dict_ci.txt 失败。附加错误信息：%s", errMsg);
+		return null; 
+	}
+
+	var ok,errMsg = ..string.save(dictPaths["xkjd6_dict_jm.txt"], ..string.fromto(..string.load(jsonPaths.Supplement)++..string.load(jsonPaths.CSS), , 54936));
+	if (!ok) {
+		if (..config.isDebug) logger.printf("⚠️生成 xkjd6_dict_jm.txt 失败。附加错误信息：%s", errMsg);
+		return null; 
+	}
+
+	return dictPaths; 
+}
+
+/* 成功返回 true */
+replaceXkjd6Dict = function(dictPaths, xkjd6Dir, logger){
+	
+	var clearBackups = function(){
+		for(filename,tmpPath in dictPaths){
+			var targetPath = ..io.joinpath(xkjd6Dir, "windikt.bak", filename);
+			if (..io.exist(targetPath) and !..io.remove(targetPath)) {
+				logger.printf("⚠️ 清理备份文件 %s 失败。", filename);
+				return null; 
+			}
+		}
+		return true; 
+	}
+	
+	var backup = function(reverse=false){
+		..io.createDir(xkjd6Dir, "windikt.bak");
+		for(filename,tmpPath in dictPaths){
+			var sourcePath = ..io.joinpath(xkjd6Dir, filename);
+			var targetPath = ..io.joinpath(xkjd6Dir, "windikt.bak", filename);
+			if (reverse) targetPath,sourcePath = sourcePath,targetPath;
+			if (!..fsys.move(sourcePath, targetPath) and !reverse) {
+				logger.printf("⚠️ 备份文件 %s 失败，错误代码：fsys.opError=%s", filename, ..fsys.opError);
+				return null; 
+			}
+			
+		}
+		return true; 
+	}
+	
+	var move = function(reverse=false){
+		for(filename,tmpPath in dictPaths){
+			var sourcePath = tmpPath;
+			var targetPath = ..io.joinpath(xkjd6Dir, filename);
+			if (reverse) targetPath,sourcePath = sourcePath,targetPath;
+			if (!..fsys.move(tmpPath, targetPath) and !reverse) {
+				logger.printf("⚠️ 移动文件 %s 失败。", filename);
+				return null; 
+			}
+		}
+		return true; 
+	}
+	
+	if (!clearBackups()) return null;
+	if (!backup()) {
+		backup(true);
+		return null; 
+	}
+	if (!move()) {
+		move(true);
+		backup(true);
+		return null; 
+	}
+	return true;
+
+}
+
+/* 成功返回 xkjd6Dir，失败返回 null */
+getXkjd6Dir = function(logger){
+	return ..io.exist(..io.joinpath(..io.fullpath(..config.xxxkUserDataDir), "mb\xkjd6"));
+}
+
+/* 成功返回 argHeader，失败返回 null */
+getXkjd6ArgHeader = function(xkjd6Dir, logger){
+	var path = ..io.exist(..io.joinpath(xkjd6Dir, "xkjd6_arg.txt"));
+
+	var file = ..io.file(path, "r"); // 文本模式（t或者省略）下，读入一行时会移除回车符 \r，即每行统一由 \n 结尾；写入一行时会自动补回车符，即 \n 变成 \r\n
+	if (!file) {
+		if (..config.isDebug) logger.print("⚠️ 无法打开 xkjd6_arg.txt，请检查文件是否存在。");
+		return null; 
+	}
+	var header = "";
+	var found = false;
+	for line in file.lines(){
+		line = ..string.fromto(line, 54936, 65001);
+		header = header ++ line ++ '\n';
+		if (line=="[DATA]") {
+			found = true;
+			break;
+		}
+	}
+	file.close();
+	if (!found) {
+		if (..config.isDebug) logger.print("⚠️ 无法在 xkjd6_arg.txt 中找到头部信息，请检查文件内容是否正确。");
+		return null; 
+	} else{
+		return header;
+	}
+}
